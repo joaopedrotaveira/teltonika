@@ -466,23 +466,31 @@ func buildJsonPacket(imei string, pkt *teltonika.Packet) []byte {
 	if pkt.Data == nil {
 		return nil
 	}
-	gpsFrames := make([]interface{}, 0)
+	frames := make([]interface{}, 0)
 	for _, frame := range pkt.Data {
-		gpsFrames = append(gpsFrames, map[string]interface{}{
+		var frm map[string]interface{}
+		frm = map[string]interface{}{
 			"timestamp": int64(frame.TimestampMs / 1000.0),
 			"lat":       frame.Lat,
 			"lon":       frame.Lng,
-		})
+		}
+		for _, element := range frame.Elements {
+			it, err := ioelements.DefaultDecoder().Decode("*", element.Id, element.Value)
+			if err != nil {
+				break
+			}
+			frm[strings.ToLower(strings.ReplaceAll(it.Definition.Name, " ", "_"))] = it.Value
+		}
+
+		frames = append(frames, frm)
 	}
-	if len(gpsFrames) == 0 {
+	if len(frames) == 0 {
 		return nil
 	}
 	values := map[string]interface{}{
 		"deveui": imei,
 		"time":   time.Now().String(),
-		"frames": map[string]interface{}{
-			"gps": gpsFrames,
-		},
+		"frames": frames,
 	}
 	jsonValue, _ := json.Marshal(values)
 	return jsonValue
@@ -490,6 +498,8 @@ func buildJsonPacket(imei string, pkt *teltonika.Packet) []byte {
 
 func hookSend(outHook string, imei string, pkt *teltonika.Packet, logger *Logger) {
 	jsonValue := buildJsonPacket(imei, pkt)
+	logger.Info.Printf("Json: %s", jsonValue)
+
 	if jsonValue == nil {
 		return
 	}
